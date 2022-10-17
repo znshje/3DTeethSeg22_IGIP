@@ -1,0 +1,71 @@
+# This is a config file for training.
+# The default settings are verified on a single NVIDIA RTX 3090 with 32GB memory.
+
+# Common settings
+common:
+  # The directory to save log files and trained weights
+  log-dir: ../../logs
+  # The directory to save oral scan model labels
+  label-dir: /run/media/zsj/DATA/Data/miccai/ground-truth_labels_instances/
+  # The size of input point cloud
+  dental-model-size: 32768
+  # The size of one patch, cropped around each centroid point
+  patch-size: 4096
+  # The size of input point cloud used by "position feature" in classification,
+  # low-quality geometry details is allowed, it can be half of dental-model-size.
+#  class-dental-model-size: 16384
+  # The size of one patch used by "shape feature" in classification, cropped around each GT centroid point
+  class-patch-size: 4096
+
+# Stage 1. Teeth gingival separation
+stage1:
+  name: train_teeth_gingival_seg
+  # TODO Change to your data list
+  train-list: /home/zsj/PycharmProjects/3DTeethSeg22_IGIP/code/config/data.list
+  # TODO Change to your data list
+  test-list: /home/zsj/PycharmProjects/3DTeethSeg22_IGIP/code/config/data.list
+  continuous: true
+  batch-size: 16
+  lr: 1e-3
+  n-epochs: 200
+  seed: 20221011
+
+# Stage 2. Centroids prediction
+stage2:
+  name: train_centroids_prediction
+  # TODO Change to your data list
+  train-list: /home/zsj/PycharmProjects/3DTeethSeg22_IGIP/code/config/data.list
+  # TODO Change to your data list
+  test-list: /home/zsj/PycharmProjects/3DTeethSeg22_IGIP/code/config/data.list
+  continuous: true
+  batch-size: 16
+  lr: 1e-3
+  n-epochs: 500
+  seed: 20221011
+
+# Stage 3. Patch segmentation
+stage3:
+  name: train_patch_segmentation
+  # TODO Change to your data list
+  train-list: /home/zsj/PycharmProjects/3DTeethSeg22_IGIP/code/config/data.list
+  # TODO Change to your data list
+  test-list: /home/zsj/PycharmProjects/3DTeethSeg22_IGIP/code/config/data.list
+  continuous: true
+  batch-size: 16
+  lr: 1e-3
+  n-epochs: 500
+  seed: 20221011
+  gt-mask-drop-rate: 0.02
+
+# Stage 4. Classification
+stage4:
+  name: train_teeth_classification
+  # TODO Change to your data list
+  train-list: /home/zsj/PycharmProjects/3DTeethSeg22_IGIP/code/config/data.list
+  # TODO Change to your data list
+  test-list: /home/zsj/PycharmProjects/3DTeethSeg22_IGIP/code/config/data.list
+  continuous: true
+  batch-size: 64
+  lr: 1e-4
+  n-epochs: 200
+  seed: 20221011

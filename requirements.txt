@@ -1,0 +1,12 @@
+trimesh==3.15.5
+pyyaml>=6.0
+tqdm>=4.62.3
+setuptools==65.5.0
+numpy==1.23.4
+loguru>=0.6.0
+sklearn>=0.0
+scikit-learn>=1.0.1
+scipy>=1.9.2
+tensorboardx>=2.4.1
+matplotlib>=3.5.1
+pydpc>=0.1.3
