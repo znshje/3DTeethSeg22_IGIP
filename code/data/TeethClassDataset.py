@@ -43,9 +43,9 @@ class TeethClassDataset(data.Dataset):
 
         kdtree = KDTree(points[:, 0:3])
 
-        data_labels = np.ones((20,)) * -1
-        data_seg = np.ones((20, self.sample_size)) * -1
-        data_resample = np.zeros((20, self.sample_size, 7))
+        data_labels = np.ones((25,)) * -1
+        data_seg = np.ones((25, self.sample_size)) * -1
+        data_resample = np.zeros((25, self.sample_size, 7))
 
         size = 0
         for label_id in np.unique(labels):
