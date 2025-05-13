@@ -265,6 +265,71 @@ class Point_Transformer_Last(nn.Module):
         return x
 
 
+class PctRot(nn.Module):
+    def __init__(self, args):
+        super(PctRot, self).__init__()
+        self.args = args
+        self.conv1 = nn.Conv1d(6, 64, kernel_size=1, bias=False)
+        self.conv2 = nn.Conv1d(64, 64, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm1d(64)
+        self.bn2 = nn.BatchNorm1d(64)
+        self.gather_local_0 = Local_op(in_channels=128, out_channels=128)
+        self.gather_local_1 = Local_op(in_channels=256, out_channels=256)
+
+        self.pt_last = Point_Transformer_Last(args)
+
+        self.conv_fuse = nn.Sequential(nn.Conv1d(1280, 1024, kernel_size=1, bias=False),
+                                       nn.BatchNorm1d(1024),
+                                       nn.LeakyReLU(negative_slope=0.2))
+
+        self.fc_layer_up = nn.Sequential(
+            nn.Linear(1024, 256, bias=False),
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(negative_slope=0.2),
+            nn.Dropout(0.2),
+            nn.Linear(256, 64),
+            nn.LeakyReLU(negative_slope=0.2),
+            nn.Linear(64, 3)
+        )
+
+        self.fc_layer_forward = nn.Sequential(
+            nn.Linear(1024, 256, bias=False),
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(negative_slope=0.2),
+            nn.Dropout(0.2),
+            nn.Linear(256, 64),
+            nn.LeakyReLU(negative_slope=0.2),
+            nn.Linear(64, 3)
+        )
+
+    def forward(self, x):
+        xyz = x.permute(0, 2, 1)
+        batch_size, _, _ = x.size()
+        # B, D, N
+        x = F.relu(self.bn1(self.conv1(x)))
+        # B, D, N
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = x.permute(0, 2, 1)
+        new_xyz, new_feature = sample_and_group(npoint=512, radius=0.15, nsample=32, xyz=xyz, points=x)
+        feature_0 = self.gather_local_0(new_feature)
+        feature = feature_0.permute(0, 2, 1)
+        new_xyz, new_feature = sample_and_group(npoint=256, radius=0.2, nsample=32, xyz=new_xyz, points=feature)
+        feature_1 = self.gather_local_1(new_feature)
+
+        x = self.pt_last(feature_1)
+        x = torch.cat([x, feature_1], dim=1)
+        x = self.conv_fuse(x)
+        x = F.adaptive_max_pool1d(x, 1).view(batch_size, -1)
+
+        x_up = self.fc_layer_up(x)
+        x_forward = self.fc_layer_forward(x)
+
+        x_up = F.normalize(x_up, p=2, dim=-1)
+        x_forward = F.normalize(x_forward, p=2, dim=-1)
+
+        return x_up, x_forward
+
+
 class SA_Layer(nn.Module):
     def __init__(self, channels):
         super(SA_Layer, self).__init__()
