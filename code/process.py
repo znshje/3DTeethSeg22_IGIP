@@ -30,6 +30,25 @@ class NpEncoder(json.JSONEncoder):
         return super(NpEncoder, self).default(obj)
 
 
+def rotation_matrix_torch(axis, theta):
+    """
+    Generalized 3d rotation via Euler-Rodriguez formula, https://www.wikiwand.com/en/Euler%E2%80%93Rodrigues_formula
+    Return the rotation matrix associated with counterclockwise rotation about
+    the given axis by theta radians.
+    """
+    if torch.sqrt(torch.dot(axis, axis)) < 1e-8:
+        return torch.eye(3, requires_grad=True).cuda()
+    axis = axis / torch.sqrt(torch.dot(axis, axis))
+
+    a = torch.cos(theta / 2.0)
+    b, c, d = -axis * torch.sin(theta / 2.0)
+    aa, bb, cc, dd = a * a, b * b, c * c, d * d
+    bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
+    return torch.tensor([[aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
+                         [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
+                         [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
+
+
 class ScanSegmentation():  # SegmentationAlgorithm is not inherited in this class anymore
     def __init__(self):
         """
@@ -138,6 +157,53 @@ class ScanSegmentation():  # SegmentationAlgorithm is not inherited in this clas
             print(traceback.format_exc())
 
         with torch.no_grad():
+            # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            # % Stage 0: rotate dental model
+            # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            if rotation:
+                model_rotation.cuda()
+                model_rotation.eval()
+                data_tensor = infer_set.get_data_tensor()
+                pred_axis_up, pred_axis_forward = model_rotation(data_tensor[:, :, 0:6].permute(0, 2, 1))
+                pred_axis_up, pred_axis_forward = pred_axis_up[0], pred_axis_forward[0]
+
+                model_rotation.cpu()
+                torch.cuda.empty_cache()
+
+                standard_ax_up = torch.Tensor([0, 0, 1]).cuda()
+                standard_ax_forward = torch.Tensor([0, -1, 0]).cuda()
+
+                if torch.dot(pred_axis_up, standard_ax_up) < 0.99:
+                    R_ax_up = torch.nn.functional.normalize(torch.cross(pred_axis_up, standard_ax_up), p=2, dim=-1)
+                    R_angle_up = torch.arccos(
+                        torch.dot(pred_axis_up, standard_ax_up) / (torch.norm(pred_axis_up) * torch.norm(standard_ax_up)))
+                    R_up = rotation_matrix_torch(R_ax_up, R_angle_up).cuda()
+
+                    pred_axis_forward = torch.matmul(R_up, pred_axis_forward.unsqueeze(1)).squeeze()
+                else:
+                    R_up = torch.eye(3).cuda()
+
+                # project onto XY plane
+                pred_axis_forward[-1] = 0
+
+                data_tensor[0, :, 0:3] = torch.matmul(data_tensor[0, :, 0:3], R_up.T)
+                data_tensor[0, :, 3:6] = torch.matmul(data_tensor[0, :, 3:6], R_up.T)
+
+                if torch.dot(pred_axis_forward, standard_ax_forward) < 0.99:
+                    R_ax_forward = torch.nn.functional.normalize(
+                        torch.cross(pred_axis_forward, standard_ax_forward), p=2, dim=-1)
+                    R_angle_forward = torch.arccos(torch.dot(pred_axis_forward, standard_ax_forward) / (
+                            torch.norm(pred_axis_forward) * torch.norm(standard_ax_forward)))
+                    R_forward = rotation_matrix_torch(R_ax_forward, R_angle_forward).cuda()
+                else:
+                    R_forward = torch.eye(3).cuda()
+
+                data_tensor[0, :, 0:3] = torch.matmul(data_tensor[0, :, 0:3], R_forward.T)
+                data_tensor[0, :, 3:6] = torch.matmul(data_tensor[0, :, 3:6], R_forward.T)
+
+                # the rotation matrix can be saved for other use
+                rot_matrix = torch.matmul(R_forward, R_up)
+
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             # % Stage 1: all tooth seg
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
